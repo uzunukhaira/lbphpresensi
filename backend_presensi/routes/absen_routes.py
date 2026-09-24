@@ -31,7 +31,9 @@ DATASET_FOLDER = os.path.join(UPLOAD_FOLDER, 'dataset')
 MODEL_PATH = os.path.join(UPLOAD_FOLDER, 'trainer.yml')
 LABEL_MAP_PATH = os.path.join(UPLOAD_FOLDER, 'label_map.json')
 
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+basedir = os.path.abspath(os.path.dirname(__file__))
+casc_path = os.path.join(basedir, '..', 'haarcascade_frontalface_default.xml')
+face_cascade = cv2.CascadeClassifier(casc_path)
 recognizer = cv2.face.LBPHFaceRecognizer_create()
 
 # Koordinat Kampus PNP
