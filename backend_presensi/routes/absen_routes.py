@@ -274,14 +274,23 @@ def train_model():
 
     face_samples, ids, label_map, nim_to_id, current_id = [], [], {}, {}, 0
     
-    print("[INFO] Memulai training, mengambil gambar dari URL Cloud...")
+    print("[INFO] Memulai training, mengunduh dataset langsung dari Supabase Storage...")
     for nim, file_path in dataset:
         try:
-            resp = requests.get(file_path)
-            if resp.status_code != 200: continue
+            # Ambil nama file asli dari URL publik Supabase
+            filename_pasien = file_path.split("/")[-1]
             
-            nparr = np.frombuffer(resp.content, np.uint8)
+            # Download langsung as bytes menggunakan Supabase Storage Client (Aman dari error DNS)
+            res_bytes = supabase.storage.from_("dataset-wajah").download(filename_pasien)
+            
+            if not res_bytes:
+                continue
+                
+            nparr = np.frombuffer(res_bytes, np.uint8)
             img_numpy = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+
+            if img_numpy is None:
+                continue
 
             if nim not in nim_to_id:
                 nim_to_id[nim] = current_id
@@ -291,11 +300,11 @@ def train_model():
             face_samples.append(img_numpy)
             ids.append(nim_to_id[nim])
         except Exception as e:
-            print(f"[ERROR] Gagal proses gambar {file_path}: {e}")
+            print(f"[ERROR] Gagal proses file untuk {nim}: {e}")
             continue
 
     if len(face_samples) == 0:
-        return jsonify({"status": "error", "message": "Gagal mengunduh dan memproses dataset."}), 400
+        return jsonify({"status": "error", "message": "Gagal mengunduh dan memproses dataset dari cloud."}), 400
 
     try:
         # Latih model LBPH dan simpan sementara di server
@@ -305,7 +314,7 @@ def train_model():
         with open(LABEL_MAP_PATH, 'w') as f:
             json.dump(label_map, f)
 
-        # Unggah file .yml dan .json hasil training ke Supabase Storage (Menimpa file lama)
+        # Unggah file .yml dan .json hasil training ke Supabase Storage (Bucket model-lbph)
         with open(MODEL_PATH, 'rb') as f:
             supabase.storage.from_("model-lbph").upload(
                 file=f.read(), path="trainer.yml", file_options={"upsert": "true"}
@@ -315,10 +324,9 @@ def train_model():
                 file=f.read(), path="label_map.json", file_options={"upsert": "true"}
             )
 
-        return jsonify({"status": "success", "message": f"Model dilatih dengan {len(face_samples)} wajah dan berhasil disimpan ke Cloud."}), 200
+        return jsonify({"status": "success", "message": f"Model berhasil dilatih dengan {len(face_samples)} wajah!"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 # ==========================================
 # 3. API JADWAL & RIWAYAT (DASHBOARD MAHASISWA)
