@@ -1,5 +1,6 @@
 import os
 import math
+from socket import socket
 import cv2
 import json
 import numpy as np
@@ -18,11 +19,20 @@ import pytesseract
 # uji windows
 # pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
+old_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(*args, **kwargs):
+    responses = old_getaddrinfo(*args, **kwargs)
+    return [r for r in responses if r[0] == socket.AF_INET]
+socket.getaddrinfo = new_getaddrinfo
+
 
 absen_bp = Blueprint('absen_bp', __name__)
 
-# Konfigurasi Supabase Client
+# Mencegah typo atau lupa http:// di environment variables
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+if SUPABASE_URL and not SUPABASE_URL.startswith("http"):
+    SUPABASE_URL = "https://" + SUPABASE_URL
+
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -31,7 +41,6 @@ DATASET_FOLDER = os.path.join(UPLOAD_FOLDER, 'dataset')
 MODEL_PATH = os.path.join(UPLOAD_FOLDER, 'trainer.yml')
 LABEL_MAP_PATH = os.path.join(UPLOAD_FOLDER, 'label_map.json')
 
-# Path otomatis membaca file xml di dalam folder yang sama (folder routes)
 casc_path = os.path.join(os.path.dirname(__file__), 'haarcascade_frontalface_default.xml')
 face_cascade = cv2.CascadeClassifier(casc_path)
 recognizer = cv2.face.LBPHFaceRecognizer_create()
@@ -277,22 +286,20 @@ def train_model():
     print(f"[INFO] Memulai training. Total data di DB: {len(dataset)}")
     for nim, file_path in dataset:
         try:
-            # Extract filename from the stored Supabase URL
-            filename_pasien = file_path.split("/")[-1]
+            url_bersih = file_path.strip()
             
-            # Use supabase client to download the image as bytes
-            # This avoids HTTP requests and DNS resolution issues on Railway
-            res_bytes = supabase.storage.from_("dataset-wajah").download(filename_pasien)
-            
+            # Gunakan urllib native Python (lebih kebal dari error DNS di Railway)
+            req = urllib.request.Request(url_bersih, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=15) as response:
+                res_bytes = response.read()
+
             if not res_bytes:
-                print(f"[WARNING] File kosong atau tidak ditemukan: {filename_pasien}")
                 continue
                 
             nparr = np.frombuffer(res_bytes, np.uint8)
             img_numpy = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
 
             if img_numpy is None:
-                print(f"[WARNING] Gagal decode gambar untuk NIM {nim}")
                 continue
 
             if nim not in nim_to_id:
@@ -303,13 +310,14 @@ def train_model():
             face_samples.append(img_numpy)
             ids.append(nim_to_id[nim])
         except Exception as e:
-            print(f"[ERROR] Exception saat memproses {filename_pasien}: {e}")
+            # Jika error ini muncul, kita bisa langsung melihat penyebab pastinya
+            print(f"[ERROR] Gagal download urllib untuk {url_bersih}: {e}")
             continue
 
     print(f"[INFO] Total wajah valid terkumpul untuk training: {len(face_samples)}")
 
     if len(face_samples) == 0:
-        return jsonify({"status": "error", "message": "Gagal mengunduh dataset. Periksa bucket Supabase."}), 400
+        return jsonify({"status": "error", "message": "Gagal mengunduh dataset. Pastikan bucket dataset-wajah diset ke PUBLIC."}), 400
 
     try:
         recognizer.train(face_samples, np.array(ids))
@@ -318,7 +326,7 @@ def train_model():
         with open(LABEL_MAP_PATH, 'w') as f:
             json.dump(label_map, f)
 
-        # Upload trained model back to Supabase
+        # Tetap gunakan Supabase SDK untuk upload file (karena tidak HTTP multi-threading)
         with open(MODEL_PATH, 'rb') as f:
             supabase.storage.from_("model-lbph").upload(
                 file=f.read(), path="trainer.yml", file_options={"upsert": "true"}
