@@ -1,0 +1,10 @@
+Flask
+gunicorn
+psycopg2-binary
+opencv-contrib-python-headless
+pytesseract
+Pillow
+Flask-Cors
+Werkzeug
+supabase==2.3.0
+requests==2.31.0
