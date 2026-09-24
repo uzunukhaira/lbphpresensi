@@ -9,12 +9,14 @@ from PIL import Image
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify
 from scipy import io
+import urllib
 from werkzeug.utils import secure_filename
 from database import get_connection, release_connection
 from supabase import create_client, Client
 import io
 import requests
 import pytesseract
+import ssl
 
 # uji windows
 # pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
