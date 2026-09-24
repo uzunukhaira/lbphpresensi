@@ -9,3 +9,4 @@ Werkzeug
 supabase==2.3.0
 requests==2.31.0
 scipy
+httpx==0.27.2
