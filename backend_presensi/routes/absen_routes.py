@@ -277,23 +277,17 @@ def train_model():
     print(f"[INFO] Memulai training. Total data di DB: {len(dataset)}")
     for nim, file_path in dataset:
         try:
-            # Ambil nama file atau path relatif yang tersimpan di database
-            # Jika file_path menyimpan URL lengkap, kita ambil bagian belakangnya
-            # Contoh: https://xxx.supabase.co/storage/v1/object/public/dataset-wajah/123_1.jpg -> 123_1.jpg
-            filename_pasien = file_path.split("/")[-1]
-            print(f"[DEBUG] Mencoba download file: {filename_pasien} (Asli dari DB: {file_path})")
-            
-            res_bytes = supabase.storage.from_("dataset-wajah").download(filename_pasien)
-            
-            if not res_bytes:
-                print(f"[WARNING] File kosong atau tidak ditemukan di Supabase untuk: {filename_pasien}")
+            # Gunakan requests.get langsung ke URL publik Supabase
+            resp = requests.get(file_path, timeout=10)
+            if resp.status_code != 200:
+                print(f"[WARNING] Gagal download (status {resp.status_code}): {file_path}")
                 continue
-                
-            nparr = np.frombuffer(res_bytes, np.uint8)
+            
+            nparr = np.frombuffer(resp.content, np.uint8)
             img_numpy = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
 
             if img_numpy is None:
-                print(f"[WARNING] Gagal decode gambar untuk {nim}")
+                print(f"[WARNING] Gagal decode gambar untuk NIM {nim}")
                 continue
 
             if nim not in nim_to_id:
@@ -304,13 +298,13 @@ def train_model():
             face_samples.append(img_numpy)
             ids.append(nim_to_id[nim])
         except Exception as e:
-            print(f"[ERROR] Gagal proses file untuk NIM {nim} dengan path {file_path}: {e}")
+            print(f"[ERROR] Exception saat memproses {file_path}: {e}")
             continue
 
     print(f"[INFO] Total wajah valid terkumpul untuk training: {len(face_samples)}")
 
     if len(face_samples) == 0:
-        return jsonify({"status": "error", "message": "Gagal mengunduh dan memproses dataset dari cloud. Periksa log Railway."}), 400
+        return jsonify({"status": "error", "message": "Gagal mengunduh dataset. Periksa koneksi internet/DNS server ke Supabase."}), 400
 
     try:
         recognizer.train(face_samples, np.array(ids))
