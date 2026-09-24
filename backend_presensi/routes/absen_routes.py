@@ -277,10 +277,22 @@ def train_model():
     print(f"[INFO] Memulai training. Total data di DB: {len(dataset)}")
     for nim, file_path in dataset:
         try:
-            # Gunakan requests.get langsung ke URL publik Supabase
-            resp = requests.get(file_path, timeout=10)
+            # Ambil nama file asli dari path/URL di database
+            filename_pasien = file_path.split("/")[-1]
+            
+            # Buat signed URL yang berlaku sementara (misal 60 detik) agar bisa di-download server
+            signed_url_res = supabase.storage.from_("dataset-wajah").create_signed_url(filename_pasien, 60)
+            
+            # Ambil URL dari respons signed URL (format bisa berupa dict atau objek tergantung versi library)
+            signed_url = signed_url_res.get('signedURL') if isinstance(signed_url_res, dict) else signed_url_res
+            
+            if not signed_url:
+                print(f"[WARNING] Gagal membuat signed URL untuk: {filename_pasien}")
+                continue
+
+            resp = requests.get(signed_url, timeout=10)
             if resp.status_code != 200:
-                print(f"[WARNING] Gagal download (status {resp.status_code}): {file_path}")
+                print(f"[WARNING] Gagal download via signed URL (status {resp.status_code}): {filename_pasien}")
                 continue
             
             nparr = np.frombuffer(resp.content, np.uint8)
@@ -304,7 +316,7 @@ def train_model():
     print(f"[INFO] Total wajah valid terkumpul untuk training: {len(face_samples)}")
 
     if len(face_samples) == 0:
-        return jsonify({"status": "error", "message": "Gagal mengunduh dataset. Periksa koneksi internet/DNS server ke Supabase."}), 400
+        return jsonify({"status": "error", "message": "Gagal mengunduh dataset. Pastikan bucket dataset-wajah dapat diakses."}), 400
 
     try:
         recognizer.train(face_samples, np.array(ids))
