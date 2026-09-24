@@ -22,8 +22,8 @@ import pytesseract
 absen_bp = Blueprint('absen_bp', __name__)
 
 # Konfigurasi Supabase Client
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 UPLOAD_FOLDER = 'uploads/'
