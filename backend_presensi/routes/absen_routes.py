@@ -277,25 +277,18 @@ def train_model():
     print(f"[INFO] Memulai training. Total data di DB: {len(dataset)}")
     for nim, file_path in dataset:
         try:
-            # Ambil nama file asli dari path/URL di database
+            # Extract filename from the stored Supabase URL
             filename_pasien = file_path.split("/")[-1]
             
-            # Buat signed URL yang berlaku sementara (misal 60 detik) agar bisa di-download server
-            signed_url_res = supabase.storage.from_("dataset-wajah").create_signed_url(filename_pasien, 60)
+            # Use supabase client to download the image as bytes
+            # This avoids HTTP requests and DNS resolution issues on Railway
+            res_bytes = supabase.storage.from_("dataset-wajah").download(filename_pasien)
             
-            # Ambil URL dari respons signed URL (format bisa berupa dict atau objek tergantung versi library)
-            signed_url = signed_url_res.get('signedURL') if isinstance(signed_url_res, dict) else signed_url_res
-            
-            if not signed_url:
-                print(f"[WARNING] Gagal membuat signed URL untuk: {filename_pasien}")
+            if not res_bytes:
+                print(f"[WARNING] File kosong atau tidak ditemukan: {filename_pasien}")
                 continue
-
-            resp = requests.get(signed_url, timeout=10)
-            if resp.status_code != 200:
-                print(f"[WARNING] Gagal download via signed URL (status {resp.status_code}): {filename_pasien}")
-                continue
-            
-            nparr = np.frombuffer(resp.content, np.uint8)
+                
+            nparr = np.frombuffer(res_bytes, np.uint8)
             img_numpy = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
 
             if img_numpy is None:
@@ -310,13 +303,13 @@ def train_model():
             face_samples.append(img_numpy)
             ids.append(nim_to_id[nim])
         except Exception as e:
-            print(f"[ERROR] Exception saat memproses {file_path}: {e}")
+            print(f"[ERROR] Exception saat memproses {filename_pasien}: {e}")
             continue
 
     print(f"[INFO] Total wajah valid terkumpul untuk training: {len(face_samples)}")
 
     if len(face_samples) == 0:
-        return jsonify({"status": "error", "message": "Gagal mengunduh dataset. Pastikan bucket dataset-wajah dapat diakses."}), 400
+        return jsonify({"status": "error", "message": "Gagal mengunduh dataset. Periksa bucket Supabase."}), 400
 
     try:
         recognizer.train(face_samples, np.array(ids))
@@ -325,6 +318,7 @@ def train_model():
         with open(LABEL_MAP_PATH, 'w') as f:
             json.dump(label_map, f)
 
+        # Upload trained model back to Supabase
         with open(MODEL_PATH, 'rb') as f:
             supabase.storage.from_("model-lbph").upload(
                 file=f.read(), path="trainer.yml", file_options={"upsert": "true"}
