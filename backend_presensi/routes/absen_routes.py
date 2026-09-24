@@ -274,22 +274,26 @@ def train_model():
 
     face_samples, ids, label_map, nim_to_id, current_id = [], [], {}, {}, 0
     
-    print("[INFO] Memulai training, mengunduh dataset langsung dari Supabase Storage...")
+    print(f"[INFO] Memulai training. Total data di DB: {len(dataset)}")
     for nim, file_path in dataset:
         try:
-            # Ambil nama file asli dari URL publik Supabase
+            # Ambil nama file atau path relatif yang tersimpan di database
+            # Jika file_path menyimpan URL lengkap, kita ambil bagian belakangnya
+            # Contoh: https://xxx.supabase.co/storage/v1/object/public/dataset-wajah/123_1.jpg -> 123_1.jpg
             filename_pasien = file_path.split("/")[-1]
+            print(f"[DEBUG] Mencoba download file: {filename_pasien} (Asli dari DB: {file_path})")
             
-            # Download langsung as bytes menggunakan Supabase Storage Client (Aman dari error DNS)
             res_bytes = supabase.storage.from_("dataset-wajah").download(filename_pasien)
             
             if not res_bytes:
+                print(f"[WARNING] File kosong atau tidak ditemukan di Supabase untuk: {filename_pasien}")
                 continue
                 
             nparr = np.frombuffer(res_bytes, np.uint8)
             img_numpy = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
 
             if img_numpy is None:
+                print(f"[WARNING] Gagal decode gambar untuk {nim}")
                 continue
 
             if nim not in nim_to_id:
@@ -300,21 +304,21 @@ def train_model():
             face_samples.append(img_numpy)
             ids.append(nim_to_id[nim])
         except Exception as e:
-            print(f"[ERROR] Gagal proses file untuk {nim}: {e}")
+            print(f"[ERROR] Gagal proses file untuk NIM {nim} dengan path {file_path}: {e}")
             continue
 
+    print(f"[INFO] Total wajah valid terkumpul untuk training: {len(face_samples)}")
+
     if len(face_samples) == 0:
-        return jsonify({"status": "error", "message": "Gagal mengunduh dan memproses dataset dari cloud."}), 400
+        return jsonify({"status": "error", "message": "Gagal mengunduh dan memproses dataset dari cloud. Periksa log Railway."}), 400
 
     try:
-        # Latih model LBPH dan simpan sementara di server
         recognizer.train(face_samples, np.array(ids))
         os.makedirs(UPLOAD_FOLDER, exist_ok=True)
         recognizer.save(MODEL_PATH)
         with open(LABEL_MAP_PATH, 'w') as f:
             json.dump(label_map, f)
 
-        # Unggah file .yml dan .json hasil training ke Supabase Storage (Bucket model-lbph)
         with open(MODEL_PATH, 'rb') as f:
             supabase.storage.from_("model-lbph").upload(
                 file=f.read(), path="trainer.yml", file_options={"upsert": "true"}
