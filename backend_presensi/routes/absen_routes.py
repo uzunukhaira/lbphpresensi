@@ -31,8 +31,8 @@ DATASET_FOLDER = os.path.join(UPLOAD_FOLDER, 'dataset')
 MODEL_PATH = os.path.join(UPLOAD_FOLDER, 'trainer.yml')
 LABEL_MAP_PATH = os.path.join(UPLOAD_FOLDER, 'label_map.json')
 
-basedir = os.path.abspath(os.path.dirname(__file__))
-casc_path = os.path.join(basedir, '..', 'haarcascade_frontalface_default.xml')
+# Path otomatis membaca file xml di dalam folder yang sama (folder routes)
+casc_path = os.path.join(os.path.dirname(__file__), 'haarcascade_frontalface_default.xml')
 face_cascade = cv2.CascadeClassifier(casc_path)
 recognizer = cv2.face.LBPHFaceRecognizer_create()
 
