@@ -1,0 +1,12 @@
+Flask
+gunicorn
+psycopg2-binary
+opencv-contrib-python-headless
+pytesseract
+Pillow
+Flask-Cors
+Werkzeug
+supabase
+requests
+scipy
+httpx
